@@ -2,9 +2,44 @@
 
 Linh vật nổi trên màn hình macOS, làm giao diện cho **Claude Code CLI**.
 
+## Cài trên máy mới
+
+Cần: macOS 13+, **Command Line Tools** (`xcode-select --install`; không cần Xcode),
+**Claude Code CLI** đã cài và đăng nhập (`claude` chạy được trong terminal).
+
+```sh
+git clone git@github.com:dangphuoc/deskpet.git && cd deskpet
+./build.sh install        # build, chép vào /Applications, mở app
+```
+
+Lần đầu mở trên mỗi máy:
+
+1. **"Apple could not verify DeskPet…"** (app ký ad-hoc, không phải malware): bấm *Done* →
+   System Settings → Privacy & Security → kéo xuống → **Open Anyway**.
+   (`build.sh install` đã tự gỡ cờ quarantine nên thường chỉ gặp khi chép app từ máy khác.)
+2. **Cấp quyền** (macOS hỏi dần, hoặc vào Cài đặt DeskPet → Điều khiển máy → "Cấp quyền…"):
+
+   | Quyền | Để làm gì | Khi nào hỏi |
+   |---|---|---|
+   | Notifications | thông báo phiên cần bạn / xong | lần mở đầu |
+   | Microphone + Speech Recognition | giữ ⌥ Space để nói | lần nói đầu |
+   | **Accessibility** | trợ lý click / gõ phím | bấm "Cấp quyền…" |
+   | **Screen Recording** | trợ lý chụp màn hình (thiếu → ảnh chỉ thấy hình nền) | bấm "Cấp quyền…" |
+   | Automation → iTerm / Terminal / System Events | gõ vào phiên trong iTerm, đổi dark mode | lần dùng đầu |
+
+   App ký ad-hoc → **mỗi lần build lại, macOS có thể coi là app mới** và đòi cấp lại Accessibility /
+   Screen Recording. Nếu công tắc trong System Settings đã bật mà vẫn không chạy: bỏ DeskPet khỏi danh sách (–) rồi thêm lại.
+3. **Theo dõi phiên ngoài DeskPet** (tuỳ chọn, theo từng máy vì sửa `~/.claude/settings.json` của máy đó):
+   Cài đặt → Phiên ngoài DeskPet → bật. Xem [mục bên dưới](#phiên-ngoài-deskpet-iterm--terminal).
+4. Tuỳ chọn: Cài đặt → "Mở khi đăng nhập"; Cài đặt → Tài khoản Claude nếu dùng nhiều tài khoản.
+
+Cài đặt (nhân vật, hồ sơ, mức quyền điều khiển máy…) lưu trong UserDefaults `com.deskpet.app` của từng máy,
+danh sách phiên ở `~/Library/Application Support/DeskPet/` — **không đồng bộ giữa các máy**.
+Trí nhớ trợ lý ở `~/DeskPet/CLAUDE.md` (muốn dùng chung thì tự đồng bộ thư mục đó).
+
 ## Bật / tắt
 
-App đã cài ở **`/Applications/DeskPet.app`** và **tự bật khi đăng nhập**.
+Sau khi `./build.sh install`, app nằm ở **`/Applications/DeskPet.app`** (bật "Mở khi đăng nhập" trong Cài đặt để tự chạy).
 
 | Việc | Cách |
 |---|---|
@@ -30,9 +65,15 @@ lần bật sau nhắn tiếp là tự `--resume`.
 Build bằng `swiftc` trực tiếp (Command Line Tools là đủ, không cần Xcode).
 `Package.swift` vẫn có cho máy có SwiftPM hoạt động bình thường (`swift build`).
 
-> Command Line Tools 16.3 có lỗi để thừa `usr/include/swift/module.modulemap`
-> (trùng module `SwiftBridging`) khiến mọi `import AppKit` hỏng. `build.sh` tự phát hiện
-> và che file đó bằng VFS overlay — không sửa file hệ thống. Cách sửa tận gốc là cài lại CLT.
+`build.sh` tự xử lý 2 lỗi môi trường hay gặp:
+
+- **SDK mới hơn compiler** — vd. CLT cài kèm SDK macOS 26.x nhưng `swiftc` là 6.1:
+  `this SDK is not supported by the compiler … Please select a toolchain which matches the SDK`.
+  Script thấy SDK ≥ 26 mà Swift < 6.2 thì dùng `MacOSX15.sdk` đi kèm (in dòng `▸ Swift … → dùng …`).
+  Muốn chọn tay: `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk ./build.sh`.
+  Máy không có SDK 15 → cập nhật CLT (Software Update) để `swiftc` khớp SDK.
+- **CLT 16.3** để thừa `usr/include/swift/module.modulemap` (trùng module `SwiftBridging`) khiến mọi
+  `import AppKit` hỏng — script che file đó bằng VFS overlay, không sửa file hệ thống.
 
 ## Dùng
 
@@ -60,17 +101,21 @@ Phiên Claude Code riêng chạy trong thư mục nhà **`~/DeskPet`** (đổi �
   hoặc nói "nhớ giúp mình …" để trợ lý ghi thêm vào mục "Ghi nhớ" (vẫn hỏi Cho phép trước khi ghi).
 - `~/DeskPet/notes/` — ghi chú, tóm tắt, bản nháp trợ lý viết cho bạn.
 
-Phiên trợ lý có thêm MCP server
-của DeskPet (`DeskPet --mcp`), các tool **được chạy không cần hỏi** vì vô hại:
+Phiên trợ lý có thêm MCP server của DeskPet (`DeskPet --mcp`, mã ở `DeskPetMCP.swift`).
+Tool cơ bản **được chạy không cần hỏi** vì vô hại (liệt kê tường minh trong `--allowedTools`):
 
 | Tool | Việc |
 |---|---|
 | `open_url` (chỉ http/https/mailto), `open_app`, `play_youtube`, `open_search` | Mở web / app / nhạc |
-| `list_sessions`, `get_session` | Xem trạng thái & nội dung các phiên |
-| `find_projects`, `list_project_sessions` | Tìm project, phiên cũ |
-| `start_session`, `send_to_session`, `focus_session` | Điều phối phiên (phiên đó vẫn hỏi bạn trước khi sửa file/chạy lệnh) |
+| `list_sessions`, `get_session` | Xem trạng thái & nội dung mọi phiên — trong DeskPet **và** đang chạy ngoài (iTerm/Terminal/IDE) |
+| `find_projects`, `list_project_sessions`, `list_profiles` | Tìm project, phiên cũ, hồ sơ tài khoản |
+| `send_to_session` | Gõ vào phiên: trong DeskPet → gõ thẳng; trong iTerm/Terminal → gõ vào đúng tab; chưa có phiên nào chạy → mở phiên trong DeskPet nối tiếp phiên gần nhất rồi gửi |
+| `start_session`, `focus_session`, `clear_session`, `rename_session`, `remote_control` | Điều phối phiên (phiên đó vẫn hỏi bạn trước khi sửa file/chạy lệnh) |
 
-Trợ lý được dặn không tự sửa code; việc trong project thì mở phiên riêng.
+Tool **điều khiển máy** (mục dưới) không nằm trong `--allowedTools`: mỗi lần gọi đi qua `SessionRunner.autoDecide`,
+tra mức quyền hiện tại (Tắt → từ chối, Hỏi trước → thẻ Cho phép, Tự chạy → cho luôn).
+
+Trợ lý được dặn không tự sửa code trong project (Bash chỉ cho việc trên máy); việc trong project thì mở phiên riêng.
 
 ### Phiên ngoài DeskPet (iTerm / Terminal)
 - Trợ lý thấy cả các phiên `claude` chạy ngoài DeskPet (`list_sessions`, `get_session`) và gõ được vào phiên
@@ -79,6 +124,12 @@ Trợ lý được dặn không tự sửa code; việc trong project thì mở 
   (`SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`, `SessionEnd`) vào `settings.json` của mọi hồ sơ.
   Pet báo khi phiên ngoài cần cho phép / làm xong; bấm thông báo là nhảy tới đúng tab. Hook khác giữ nguyên,
   có bản sao `settings.json.deskpet-backup`, tắt là gỡ sạch. Chỉ áp dụng cho phiên mở sau khi bật.
+- Cách hoạt động: hook chạy `~/Library/Application Support/DeskPet/hook.sh <sự kiện>`, ghi
+  `…/DeskPet/hooks/<session_id>.json` (sự kiện mới nhất + pid claude + input của hook). App đọc thư mục đó mỗi 1,5 giây
+  (`ExternalMonitor`), MCP đọc khi `list_sessions`. Hook nhận diện bằng chuỗi `#deskpet-status-hook` trong lệnh;
+  phiên do DeskPet chạy có `DESKPET_SESSION=1` nên bị bỏ qua. Không có hook thì trạng thái chỉ là đoán theo giờ ghi transcript.
+- Gõ vào iTerm/Terminal dùng AppleScript theo tty của tiến trình `claude`; prompt nhiều dòng được gộp một dòng
+  (Enter là gửi). Phiên trong VS Code/IDE chỉ xem được — muốn điều khiển thì thoát ở đó rồi resume trong DeskPet.
 
 ### Điều khiển máy
 Trợ lý điều khiển được máy Mac qua các tool MCP thêm, chia 4 nhóm. Mỗi nhóm có mức **Tắt / Hỏi trước / Tự chạy**,
@@ -141,7 +192,14 @@ Luật `allow`/`deny` trong `~/.claude/settings.json` và `.claude/settings*.jso
 
 ## Công cụ dev
 
+Mẹo: test bằng file chạy trần `.build/direct/DeskPet` (build xong là có). Chạy file trong bundle
+(`build/DeskPet.app/Contents/MacOS/DeskPet`) ngay sau khi build có thể **đứng im vài phút** do macOS
+quét app mới ký — không phải lỗi code.
+
 ```sh
+# Gọi thẳng MCP server (mỗi dòng một JSON-RPC) — test tool mà không cần Claude:
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"system_status","arguments":{}}}' \
+  | .build/direct/DeskPet --mcp
 .build/direct/DeskPet --selftest "<tin 1>" "<tin 2>" [--deny] # nhiều lượt trong 1 tiến trình, tự cho phép/từ chối
 .build/direct/DeskPet --assistant "<tin nhắn>"               # hỏi trợ lý (có MCP DeskPet)
 DESKPET_SUPPORT_DIR=/tmp/x …                                 # chạy test với dữ liệu riêng
