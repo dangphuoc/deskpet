@@ -36,6 +36,10 @@ Cài đặt/phiên/trí nhớ trợ lý là dữ liệu cục bộ từng máy (
 - Hook trạng thái: **không thử trên `~/.claude/settings.json` thật**. Dựng harness: chép `Sources/DeskPet/*.swift` trừ
   `main.swift` + một `main.swift` gọi `StatusHooks.setEnabled(_, roots: [<thư mục profile tạm>])`, chạy với
   `DESKPET_SUPPORT_DIR=<thư mục tạm>`, rồi gọi lệnh hook bằng `/bin/sh -c` với JSON giả trên stdin.
+- Giao diện: `DESKPET_SUPPORT_DIR=<tạm> .build/direct/DeskPet --snapshot <thư mục>` render PNG (pet, bảng phiên,
+  `dashboard_external.png` nếu đang có phiên claude ngoài DeskPet) — xem ảnh để kiểm tra, không cần mở app.
+  Luôn đặt `DESKPET_SUPPORT_DIR` tạm: snapshot tạo phiên mẫu và sẽ ghi đè danh sách phiên thật nếu dùng thư mục mặc định.
+- Sau khi sửa `ExternalSessions`, chạy lại `list_sessions` qua `--mcp` để chắc vẫn thấy phiên ngoài (lỗi tách cột `ps` từng làm mất hết).
 - Lệnh dev khác (`--selftest`, `--assistant`, `--snapshot`, `--sessions`…): README → "Công cụ dev".
 - Trong phiên Claude Code có hook RTK: dùng đường dẫn tuyệt đối (`/bin/ps`, `/usr/bin/grep`) nếu kết quả `ps`/`grep` lạ.
 
@@ -50,6 +54,7 @@ Cài đặt/phiên/trí nhớ trợ lý là dữ liệu cục bộ từng máy (
 | `DeskPetMCP.swift` | MCP server stdio của trợ lý; tool cơ bản (`baseToolNames` → `--allowedTools`) |
 | `ComputerControl.swift` | `ControlGroup`/`ControlMode`/`ControlPolicy` (mức quyền đọc thẳng UserDefaults) + tool điều khiển máy |
 | `ExternalSessions.swift` | Dò `claude` chạy ngoài DeskPet (ps/lsof), gõ vào / focus tab iTerm-Terminal qua AppleScript |
+| `DashboardView.swift` | Bảng phiên; nhóm "Ngoài DeskPet" (`ExternalRow`, `ExternalDetailView`) lấy từ `SessionManager.externalSessions` |
 | `StatusHooks.swift` | Cài/gỡ hook trạng thái trong settings.json, đọc `hooks/*.json`; `ExternalMonitor` báo pet |
 | `SessionHistory.swift` | Đọc transcript `~/.claude/projects/<thư mục mã hoá>/*.jsonl`, `ProjectIndex` |
 | `Settings.swift` / `SettingsView.swift` | `AppSettings` (UserDefaults) và cửa sổ Cài đặt |

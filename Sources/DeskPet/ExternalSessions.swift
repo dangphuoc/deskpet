@@ -4,7 +4,7 @@ import Foundation
 /// ghép với transcript mới nhất trong thư mục project để biết tiêu đề và tin nhắn cuối.
 /// Chỉ để xem — DeskPet không gõ được vào các phiên này.
 enum ExternalSessions {
-    struct Info {
+    struct Info: Identifiable {
         let pid: Int
         let folder: String
         let app: String
@@ -17,18 +17,28 @@ enum ExternalSessions {
         /// Trạng thái chính xác từ hook (nếu đã bật "Theo dõi phiên ngoài DeskPet").
         var hook: StatusHooks.State? = nil
 
+        var id: Int { pid }
+        var folderName: String { (folder as NSString).lastPathComponent }
+        /// Gõ thẳng vào được không (chỉ iTerm / Terminal).
+        var canType: Bool { tty != nil && ["iterm", "iterm2", "terminal"].contains(app.lowercased()) }
+
         var isActive: Bool { lastActivity.map { Date().timeIntervalSince($0) < 60 } ?? false }
+        var kind: StatusHooks.State.Kind { hook?.kind ?? (isActive ? .working : .idle) }
         /// Có hook thì chính xác; không thì đoán theo lần ghi transcript gần nhất.
         var statusLabel: String { hook?.label ?? (isActive ? "Đang làm" : "Rảnh / chờ bạn") }
     }
+
+    private static let psLine = try! NSRegularExpression(pattern: #"^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*?)\s*$"#)
 
     static func running() -> [Info] {
         // pid → (ppid, tty, comm)
         var procs: [Int: (ppid: Int, tty: String, comm: String)] = [:]
         for line in run("/bin/ps", ["-axo", "pid=,ppid=,tty=,comm="]).split(separator: "\n") {
-            let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
-            guard parts.count == 4, let pid = Int(parts[0]), let ppid = Int(parts[1]) else { continue }
-            procs[pid] = (ppid, String(parts[2]), String(parts[3]))
+            // "  1983  1633 ttys000  claude" — cột cách nhau bởi nhiều khoảng trắng; comm có thể chứa khoảng trắng.
+            let l = String(line)
+            guard let m = Self.psLine.firstMatch(in: l, range: NSRange(l.startIndex..., in: l)), m.numberOfRanges == 5,
+                  let pid = Int(l[Range(m.range(at: 1), in: l)!]), let ppid = Int(l[Range(m.range(at: 2), in: l)!]) else { continue }
+            procs[pid] = (ppid, String(l[Range(m.range(at: 3), in: l)!]), String(l[Range(m.range(at: 4), in: l)!]))
         }
         func ancestors(_ pid: Int) -> [String] {
             var out: [String] = [], p = procs[pid]?.ppid ?? 1, guardCount = 0

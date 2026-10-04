@@ -202,6 +202,14 @@ enum Snapshot {
         manager.selectedId = q.id
         render(DashboardView(manager: manager, settings: settings, actions: ChatActions()),
                size: NSSize(width: 1000, height: 660), to: dir.appendingPathComponent("dashboard_question.png"))
+        // Phiên claude thật đang chạy ngoài DeskPet (nếu có).
+        manager.refreshExternal(force: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(3))
+        if let e = manager.externalSessions.first {
+            manager.selectedExternalPid = e.pid
+            render(DashboardView(manager: manager, settings: settings, actions: ChatActions()),
+                   size: NSSize(width: 1000, height: 660), to: dir.appendingPathComponent("dashboard_external.png"))
+        }
         render(ChatView(runner: manager.assistant, settings: settings, compact: true, actions: ChatActions()),
                size: NSSize(width: 380, height: 500), to: dir.appendingPathComponent("assistant.png"))
         render(ToastView(alert: .init(runnerId: a.id, kind: .permission, title: "face-engine-switcher cần bạn cho phép",

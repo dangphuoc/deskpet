@@ -87,7 +87,9 @@ Build bằng `swiftc` trực tiếp (Command Line Tools là đủ, không cần 
 | ⌘N trong bảng phiên | Phiên mới: chọn project (lấy từ `~/.claude/projects`), tiếp tục phiên cũ hoặc bắt đầu mới |
 
 ### Bảng phiên
-- Cột trái chia nhóm **Cần bạn** (chờ cho phép / chờ trả lời) · **Đang làm** · **Xong · chưa xem** · Khác.
+- Cột trái chia nhóm **Cần bạn** (chờ cho phép / chờ trả lời) · **Đang làm** · **Xong · chưa xem** · Khác ·
+  **Ngoài DeskPet** (phiên `claude` đang chạy trong iTerm/Terminal/IDE: xem nội dung, gõ thẳng vào tab iTerm/Terminal,
+  double-click để nhảy tới tab). Danh sách này chỉ làm mới (3 giây/lần) khi bảng phiên đang mở.
 - Mỗi phiên: thẻ **Cho phép / Từ chối** có **diff** khi sửa file, thẻ **câu hỏi** (AskUserQuestion),
   bảng **việc cần làm** (TodoWrite / TaskCreate), nút **dừng** (như Esc), **phiên cũ** của thư mục,
   **mở trong Terminal** (`claude --resume`) khi cần giao diện đầy đủ.

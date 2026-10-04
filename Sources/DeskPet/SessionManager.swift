@@ -26,6 +26,31 @@ final class SessionManager: ObservableObject {
         didSet {
             // Bấm vào một phiên trong bảng → đó là "phiên này" khi bạn nói với trợ lý.
             if let id = selectedId, id != assistant.id { currentTargetId = id; scheduleStateWrite() }
+            if selectedId != nil { selectedExternalPid = nil }
+        }
+    }
+    /// Phiên ngoài DeskPet đang chọn trong bảng phiên (theo pid của claude).
+    @Published var selectedExternalPid: Int? {
+        didSet { if selectedExternalPid != nil { selectedId = nil } }
+    }
+    /// Phiên claude chạy ngoài DeskPet — chỉ làm mới khi bảng phiên đang mở (ps/lsof không rẻ).
+    @Published private(set) var externalSessions: [ExternalSessions.Info] = []
+    var dashboardVisible: () -> Bool = { false }
+    private var externalRefreshing = false
+
+    func refreshExternal(force: Bool = false) {
+        guard !externalRefreshing, force || dashboardVisible() else { return }
+        externalRefreshing = true
+        DispatchQueue.global(qos: .utility).async {
+            let order: [StatusHooks.State.Kind] = [.permission, .working, .done, .idle, .ended]
+            let list = ExternalSessions.running().sorted {
+                let a = order.firstIndex(of: $0.kind) ?? 9, b = order.firstIndex(of: $1.kind) ?? 9
+                return a != b ? a < b : ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
+            }
+            DispatchQueue.main.async {
+                self.externalSessions = list
+                self.externalRefreshing = false
+            }
         }
     }
     /// Phiên mà trợ lý hiểu là "phiên đó / phiên này" (vừa tạo, vừa nhắn, hoặc bạn vừa bấm vào).
@@ -264,6 +289,7 @@ final class SessionManager: ObservableObject {
             // Hết chờ cho phép → bỏ bong bóng của phiên đó.
             if let a = alert, a.external?.sessionId == s.sessionId, a.kind == .permission { alert = nil }
         }
+        refreshExternal()
         objectWillChange.send()
     }
 

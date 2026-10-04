@@ -338,7 +338,7 @@ enum DeskPetMCP {
             }
             return line
         }
-        return "\n\nPhiên Claude Code chạy ngoài DeskPet (Terminal/IDE — chỉ xem được, không gõ thay được):\n"
+        return "\n\nPhiên Claude Code chạy ngoài DeskPet (send_to_session gõ được vào phiên trong iTerm/Terminal; IDE thì chỉ xem):\n"
             + lines.joined(separator: "\n")
     }
 

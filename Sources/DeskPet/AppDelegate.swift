@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         }
         manager.externalMonitor.onChange = { [weak manager] e in manager?.receiveExternal(e) }
         manager.externalMonitor.start()
+        manager.dashboardVisible = { [weak self] in self?.dashboardWindow?.isVisible == true }
         manager.$alert.receive(on: RunLoop.main).sink { [weak self] a in
             if a == nil { self?.hideToast() }
             self?.updateStatusButton()

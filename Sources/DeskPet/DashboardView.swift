@@ -19,6 +19,8 @@ struct DashboardView: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { manager.refreshExternal(force: true) }
+        .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in manager.refreshExternal() }
         .sheet(isPresented: $manager.requestNewSession) {
             NewSessionSheet(settings: settings) { folder, title, resume, prompt, profileId in
                 manager.requestNewSession = false
@@ -78,7 +80,8 @@ struct DashboardView: View {
                     section("Đang làm", groups.working, color: .blue)
                     section("Xong · chưa xem", groups.done, color: .green)
                     section("Khác", groups.rest, color: .secondary)
-                    if manager.runners.isEmpty {
+                    externalSection
+                    if manager.runners.isEmpty && manager.externalSessions.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "rectangle.stack.badge.plus").font(.system(size: 28)).foregroundStyle(.secondary)
                             Text("Chưa có phiên nào.\nNói với Trợ lý: “tạo phiên mới ở service-bank-v3”\nhoặc bấm “Phiên mới”.")
@@ -127,11 +130,44 @@ struct DashboardView: View {
         }
     }
 
+    @ViewBuilder
+    private var externalSection: some View {
+        if !manager.externalSessions.isEmpty {
+            HStack(spacing: 4) {
+                Text("Ngoài DeskPet · \(manager.externalSessions.count)")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.purple)
+                if !FileManager.default.fileExists(atPath: StatusHooks.dir.path) {
+                    Image(systemName: "info.circle").font(.system(size: 9)).foregroundStyle(.secondary)
+                        .help("Trạng thái đang là ước đoán. Bật Cài đặt → Phiên ngoài DeskPet → “Theo dõi chính xác” để biết chính xác.")
+                }
+            }
+            .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 2)
+            ForEach(manager.externalSessions) { e in
+                ExternalRow(info: e, selected: manager.selectedExternalPid == e.pid)
+                    .onTapGesture(count: 2) { if let tty = e.tty { ExternalSessions.focus(app: e.app, tty: tty) } }
+                    .onTapGesture { manager.selectedExternalPid = e.pid }
+                    .contextMenu {
+                        Button("Mở tab trong \(e.app)") { if let tty = e.tty { ExternalSessions.focus(app: e.app, tty: tty) } }
+                            .disabled(!e.canType)
+                        Button("Mở thư mục trong Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: e.folder)])
+                        }
+                    }
+            }
+        }
+    }
+
     // MARK: Detail
 
     @ViewBuilder
     private var detail: some View {
-        if let id = manager.selectedId, let r = manager.runner(id) {
+        if let pid = manager.selectedExternalPid {
+            if let e = manager.externalSessions.first(where: { $0.pid == pid }) {
+                ExternalDetailView(info: e)
+            } else {
+                Text("Phiên này đã đóng.").foregroundStyle(.secondary)
+            }
+        } else if let id = manager.selectedId, let r = manager.runner(id) {
             ChatView(runner: r, settings: settings, compact: false, actions: actions)
                 .id(r.id)
         } else {
@@ -190,6 +226,166 @@ struct SidebarRow: View {
         case .done: return runner.unread ? .green : .gray.opacity(0.5)
         case .error: return .red
         case .idle: return .gray.opacity(0.5)
+        }
+    }
+}
+
+// MARK: - Phiên ngoài DeskPet
+
+private extension StatusHooks.State.Kind {
+    var color: Color {
+        switch self {
+        case .permission: return .orange
+        case .working: return .blue
+        case .done: return .green
+        case .idle, .ended: return .gray.opacity(0.5)
+        }
+    }
+}
+
+struct ExternalRow: View {
+    let info: ExternalSessions.Info
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle().fill(info.kind.color).frame(width: 9, height: 9)
+                if info.kind == .working {
+                    Circle().stroke(info.kind.color.opacity(0.4), lineWidth: 3).frame(width: 15, height: 15)
+                }
+            }
+            .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Image(systemName: "apple.terminal").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(info.title).font(.system(size: 12)).lineLimit(1)
+                }
+                Text("\(info.folderName) · \(info.app) · \(info.statusLabel)")
+                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if let d = info.lastActivity {
+                Text(ShortTime.since(d)).font(.system(size: 9)).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .background(selected ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+/// Xem phiên chạy ngoài DeskPet (đọc transcript) + gõ thẳng vào tab iTerm/Terminal của nó.
+struct ExternalDetailView: View {
+    let info: ExternalSessions.Info
+    @State private var items: [ChatItem] = []
+    @State private var draft = ""
+    @State private var sending = false
+    @State private var result: (text: String, isError: Bool)?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(info.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                    Text(verbatim: "\(info.folder) · \(info.app) · pid \(info.pid)")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                }
+                Spacer()
+                Text(info.statusLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(info.kind.color.opacity(0.18), in: Capsule())
+                if info.canType, let tty = info.tty {
+                    Button("Mở tab trong \(info.app)") { ExternalSessions.focus(app: info.app, tty: tty) }
+                }
+            }
+            .padding(12)
+
+            if info.kind == .permission {
+                HStack {
+                    Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+                    Text("Phiên đang chờ bạn cho phép — trả lời ngay trong \(info.app).").font(.system(size: 12))
+                    Spacer()
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Color.orange.opacity(0.12))
+            }
+            Divider()
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        if items.isEmpty {
+                            Text("Chưa đọc được nội dung phiên.").font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        ForEach(items) { ExternalItemRow(item: $0) }
+                        Color.clear.frame(height: 1).id("bottom")
+                    }
+                    .padding(12)
+                }
+                .onChange(of: items.count) { _ in proxy.scrollTo("bottom") }
+            }
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                if info.canType {
+                    HStack(alignment: .bottom) {
+                        TextField("Gõ vào phiên — gửi sang tab \(info.app)…", text: $draft, axis: .vertical)
+                            .lineLimit(1...4).textFieldStyle(.roundedBorder)
+                            .onSubmit(send)
+                        Button(sending ? "Đang gửi…" : "Gửi", action: send)
+                            .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    if let result {
+                        Text(result.text).font(.system(size: 11)).foregroundStyle(result.isError ? .red : .secondary)
+                    }
+                } else {
+                    Text("Phiên đang chạy trong \(info.app) — DeskPet chỉ xem được. Muốn điều khiển: thoát phiên ở đó rồi mở lại trong DeskPet (Phiên mới → chọn project → chọn phiên cũ).")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(12)
+        }
+        // Transcript đổi (lastActivity mới) → đọc lại.
+        .task(id: "\(info.pid)-\(info.lastActivity?.timeIntervalSince1970 ?? 0)") {
+            let i = info
+            items = await Task.detached { ExternalSessions.recent(i, limit: 60) }.value
+        }
+    }
+
+    private func send() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !sending else { return }
+        sending = true
+        let i = info
+        Task {
+            let r = await Task.detached { ExternalSessions.send(text, to: i) }.value
+            sending = false
+            switch r {
+            case .success(let msg): result = (msg, false); draft = ""
+            case .failure(let e): result = (e.text, true)
+            }
+        }
+    }
+}
+
+struct ExternalItemRow: View {
+    let item: ChatItem
+
+    var body: some View {
+        switch item.kind {
+        case .user:
+            HStack {
+                Spacer(minLength: 60)
+                Text(item.text).font(.system(size: 12)).textSelection(.enabled)
+                    .padding(8).background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+            }
+        case .tool:
+            Label("\(item.text)\(item.detail.isEmpty ? "" : " — \(item.detail)")", systemImage: item.icon.isEmpty ? "wrench" : item.icon)
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        default:
+            Text(.init(item.text)).font(.system(size: 12)).textSelection(.enabled)
         }
     }
 }
