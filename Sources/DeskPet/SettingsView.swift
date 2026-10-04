@@ -70,6 +70,10 @@ struct SettingsView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
 
+            Section("Phiên ngoài DeskPet") {
+                StatusHooksSettings(settings: settings)
+            }
+
             Section("Điều khiển máy") {
                 ComputerControlSettings(settings: settings)
             }
@@ -195,5 +199,29 @@ struct ComputerControlSettings: View {
             Spacer()
             if !granted { Button("Cấp quyền…", action: request).controlSize(.small) }
         }
+    }
+}
+
+/// Bật/tắt hook báo trạng thái cho các phiên Claude Code chạy ngoài DeskPet.
+struct StatusHooksSettings: View {
+    @ObservedObject var settings: AppSettings
+    @State private var installed = false
+    @State private var error: String?
+
+    private var roots: [String] { settings.profiles.map(\.rootPath) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Theo dõi chính xác phiên chạy trong iTerm / Terminal", isOn: Binding(get: { installed }, set: { on in
+                error = StatusHooks.setEnabled(on, roots: roots)
+                installed = StatusHooks.isInstalled(roots: roots)
+            }))
+            if let error {
+                Text(error).font(.system(size: 11)).foregroundStyle(.red)
+            }
+            Text("Thêm hook nhỏ vào settings.json của Claude Code (mọi hồ sơ) để biết phiên ngoài DeskPet đang làm, chờ cho phép hay đã xong — pet báo như phiên trong DeskPet. Hook khác của bạn giữ nguyên; tắt là gỡ sạch. Chỉ áp dụng cho phiên mở SAU khi bật. Thêm hồ sơ mới thì tắt rồi bật lại.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .onAppear { installed = StatusHooks.isInstalled(roots: roots) }
     }
 }

@@ -14,7 +14,10 @@ final class SessionManager: ObservableObject {
         let kind: Kind
         let title: String
         let body: String
+        /// Phiên chạy ngoài DeskPet (iTerm/Terminal) — bấm thông báo thì đưa tab đó lên.
+        var external: External? = nil
     }
+    struct External: Equatable { let sessionId: String; let app: String; let tty: String }
 
     enum Aggregate { case attention, working, none }
 
@@ -220,12 +223,49 @@ final class SessionManager: ObservableObject {
 
     var aggregate: Aggregate {
         let all = runners + [assistant]
-        if all.contains(where: { $0.status.needsAttention }) { return .attention }
-        if all.contains(where: { $0.isBusy }) { return .working }
+        if all.contains(where: { $0.status.needsAttention }) || !externalMonitor.attention.isEmpty { return .attention }
+        if all.contains(where: { $0.isBusy }) || !externalMonitor.working.isEmpty { return .working }
         return .none
     }
 
-    var attentionCount: Int { (runners + [assistant]).filter { $0.status.needsAttention }.count }
+    var attentionCount: Int {
+        (runners + [assistant]).filter { $0.status.needsAttention }.count + externalMonitor.attention.count
+    }
+
+    /// Phiên ngoài DeskPet báo qua hook (khi bật "Theo dõi phiên ngoài DeskPet").
+    let externalMonitor = ExternalMonitor()
+    var onExternalFinished: (() -> Void)?
+
+    func receiveExternal(_ e: ExternalMonitor.Event) {
+        let s = e.state
+        let folderName = (s.cwd as NSString).lastPathComponent
+        func ref() -> External? {
+            guard let info = ExternalSessions.running().first(where: { $0.pid == s.pid }), let tty = info.tty else { return nil }
+            return External(sessionId: s.sessionId, app: info.app, tty: tty)
+        }
+        switch e.kind {
+        case .permission:
+            let r = ref()
+            raise(Alert(runnerId: UUID(), kind: .permission,
+                        title: "\(folderName)\(r.map { " (\($0.app))" } ?? "") cần bạn cho phép",
+                        body: s.message, external: r))
+        case .done:
+            let r = ref()
+            // Đang nhìn đúng app terminal đó thì khỏi báo xong.
+            if let r, NSWorkspace.shared.frontmostApplication?.localizedName?.lowercased().hasPrefix(r.app.lowercased().prefix(4)) == true {
+                break
+            }
+            onExternalFinished?()
+            let last = SessionHistory.transcript(url: URL(fileURLWithPath: s.transcriptPath), maxItems: 20)
+                .last { $0.kind == .assistant }?.text ?? ""
+            raise(Alert(runnerId: UUID(), kind: .done, title: "\(folderName)\(r.map { " (\($0.app))" } ?? "") xong rồi",
+                        body: String(last.replacingOccurrences(of: "\n", with: " ").prefix(140)), external: r))
+        default:
+            // Hết chờ cho phép → bỏ bong bóng của phiên đó.
+            if let a = alert, a.external?.sessionId == s.sessionId, a.kind == .permission { alert = nil }
+        }
+        objectWillChange.send()
+    }
 
     func dismissAlert() { alert = nil }
 

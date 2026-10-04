@@ -49,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             }
         }
         manager.onFocusRequest = { [weak self] id in self?.showDashboard(select: id) }
+        manager.onExternalFinished = { [weak self] in
+            self?.stopWalk()
+            self?.pet.handle(.done)
+        }
+        manager.externalMonitor.onChange = { [weak manager] e in manager?.receiveExternal(e) }
+        manager.externalMonitor.start()
         manager.$alert.receive(on: RunLoop.main).sink { [weak self] a in
             if a == nil { self?.hideToast() }
             self?.updateStatusButton()
@@ -339,6 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     private func open(alert a: SessionManager.Alert) {
         manager.dismissAlert()
+        if let ext = a.external { ExternalSessions.focus(app: ext.app, tty: ext.tty); return }
         if a.runnerId == manager.assistant.id { showChat() } else { showDashboard(select: a.runnerId) }
     }
 
@@ -396,6 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         content.title = a.title
         content.body = a.body
         content.userInfo = ["runnerId": a.runnerId.uuidString]
+        if let ext = a.external { content.userInfo["externalApp"] = ext.app; content.userInfo["externalTty"] = ext.tty }
         if a.kind == .permission || a.kind == .question { content.sound = .default }
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: a.runnerId.uuidString, content: content, trigger: nil))
@@ -408,7 +416,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let s = response.notification.request.content.userInfo["runnerId"] as? String, let id = UUID(uuidString: s) {
+        let info = response.notification.request.content.userInfo
+        if let app = info["externalApp"] as? String, let tty = info["externalTty"] as? String {
+            ExternalSessions.focus(app: app, tty: tty)
+        } else if let s = info["runnerId"] as? String, let id = UUID(uuidString: s) {
             DispatchQueue.main.async {
                 if id == self.manager.assistant.id { self.showChat() } else { self.showDashboard(select: id) }
             }

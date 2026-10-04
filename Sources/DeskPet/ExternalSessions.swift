@@ -14,9 +14,12 @@ enum ExternalSessions {
         let title: String
         let lastActivity: Date?
         let root: String?
+        /// Trạng thái chính xác từ hook (nếu đã bật "Theo dõi phiên ngoài DeskPet").
+        var hook: StatusHooks.State? = nil
 
         var isActive: Bool { lastActivity.map { Date().timeIntervalSince($0) < 60 } ?? false }
-        var statusLabel: String { isActive ? "Đang làm" : "Rảnh / chờ bạn" }
+        /// Có hook thì chính xác; không thì đoán theo lần ghi transcript gần nhất.
+        var statusLabel: String { hook?.label ?? (isActive ? "Đang làm" : "Rảnh / chờ bạn") }
     }
 
     static func running() -> [Info] {
@@ -49,11 +52,20 @@ enum ExternalSessions {
         }
 
         let roots = AppSettings.shared.profiles.map(\.rootPath)
+        let hooks = StatusHooks.states().values
         var usedPerFolder: [String: Int] = [:]
         return claudePids.compactMap { pid -> Info? in
             guard let folder = cwd[pid] else { return nil }
             let app = ancestors(pid).lazy.compactMap(appName).first ?? "?"
             let tty = procs[pid].map(\.tty).flatMap { $0.hasPrefix("ttys") ? "/dev/" + $0 : nil }
+            // Hook ghi đúng pid của claude → biết chắc phiên nào (không phải đoán theo transcript mới nhất).
+            if let h = hooks.filter({ $0.pid == pid }).max(by: { $0.time < $1.time }) {
+                let root = roots.first { h.transcriptPath.hasPrefix($0 + "/") }
+                let entry = SessionHistory.list(folder: folder, limit: 30, root: root).first { $0.id == h.sessionId }
+                return Info(pid: pid, folder: folder, app: app, tty: tty, sessionId: h.sessionId,
+                            title: entry?.title ?? (folder as NSString).lastPathComponent,
+                            lastActivity: entry?.date ?? h.time, root: root, hook: h)
+            }
             // Nhiều claude cùng thư mục → gán lần lượt các transcript mới nhất.
             let k = usedPerFolder[folder, default: 0]
             usedPerFolder[folder] = k + 1
@@ -71,6 +83,53 @@ enum ExternalSessions {
     static func recent(_ s: Info, limit: Int = 12) -> [ChatItem] {
         guard let sid = s.sessionId else { return [] }
         return SessionHistory.transcript(folder: s.folder, sessionId: sid, maxItems: limit, root: s.root)
+    }
+
+    /// Đưa tab terminal đang chạy phiên lên trước (khi bấm thông báo của phiên ngoài DeskPet).
+    static func focus(app: String, tty: String) {
+        let script: String
+        switch app.lowercased() {
+        case "iterm", "iterm2":
+            script = """
+            on run argv
+              tell application id "com.googlecode.iterm2"
+                activate
+                repeat with w in windows
+                  repeat with t in tabs of w
+                    repeat with s in sessions of t
+                      if tty of s is (item 1 of argv) then
+                        select w
+                        select t
+                        select s
+                        return "ok"
+                      end if
+                    end repeat
+                  end repeat
+                end repeat
+              end tell
+            end run
+            """
+        case "terminal":
+            script = """
+            on run argv
+              tell application id "com.apple.Terminal"
+                activate
+                repeat with w in windows
+                  repeat with t in tabs of w
+                    if tty of t is (item 1 of argv) then
+                      set selected of t to true
+                      set index of w to 1
+                      return "ok"
+                    end if
+                  end repeat
+                end repeat
+              end tell
+            end run
+            """
+        default:
+            return
+        }
+        DispatchQueue.global().async { _ = runScript(script, args: [tty]) }
     }
 
     /// Gõ `text` rồi Enter vào tab terminal đang chạy phiên (iTerm / Terminal), như người dùng tự gõ.

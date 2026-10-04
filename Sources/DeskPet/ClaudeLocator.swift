@@ -38,6 +38,8 @@ enum ClaudeLocator {
         // Nếu DeskPet được mở từ bên trong một phiên Claude Code, đừng để claude con tưởng mình là tiến trình lồng.
         env["CLAUDECODE"] = nil
         env["CLAUDE_CODE_ENTRYPOINT"] = nil
+        // Hook báo trạng thái của DeskPet bỏ qua phiên do chính DeskPet chạy (đã theo dõi trực tiếp).
+        env["DESKPET_SESSION"] = "1"
         return env
     }
 }

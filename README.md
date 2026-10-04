@@ -72,6 +72,14 @@ của DeskPet (`DeskPet --mcp`), các tool **được chạy không cần hỏi*
 
 Trợ lý được dặn không tự sửa code; việc trong project thì mở phiên riêng.
 
+### Phiên ngoài DeskPet (iTerm / Terminal)
+- Trợ lý thấy cả các phiên `claude` chạy ngoài DeskPet (`list_sessions`, `get_session`) và gõ được vào phiên
+  trong iTerm / Terminal (`send_to_session`); chưa có phiên nào chạy cho project thì tự mở phiên trong DeskPet.
+- **Cài đặt → Phiên ngoài DeskPet → Theo dõi chính xác** (mặc định tắt): thêm hook báo trạng thái
+  (`SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`, `SessionEnd`) vào `settings.json` của mọi hồ sơ.
+  Pet báo khi phiên ngoài cần cho phép / làm xong; bấm thông báo là nhảy tới đúng tab. Hook khác giữ nguyên,
+  có bản sao `settings.json.deskpet-backup`, tắt là gỡ sạch. Chỉ áp dụng cho phiên mở sau khi bật.
+
 ### Điều khiển máy
 Trợ lý điều khiển được máy Mac qua các tool MCP thêm, chia 4 nhóm. Mỗi nhóm có mức **Tắt / Hỏi trước / Tự chạy**,
 đổi ở **Cài đặt → Điều khiển máy** hoặc **menu 🐾 → Điều khiển máy**; đổi là có hiệu lực ngay, không cần khởi động lại.

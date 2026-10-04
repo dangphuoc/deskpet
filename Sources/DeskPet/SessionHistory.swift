@@ -67,7 +67,10 @@ enum SessionHistory {
 
     /// Dựng lại nội dung chat từ transcript để hiển thị khi resume.
     static func transcript(folder: String, sessionId: String, maxItems: Int = 150, root: String? = nil) -> [ChatItem] {
-        let url = projectDir(for: folder, root: root).appendingPathComponent(sessionId + ".jsonl")
+        transcript(url: projectDir(for: folder, root: root).appendingPathComponent(sessionId + ".jsonl"), maxItems: maxItems)
+    }
+
+    static func transcript(url: URL, maxItems: Int = 150) -> [ChatItem] {
         var items: [ChatItem] = []
         forEachLine(url) { obj in
             if obj["isSidechain"] as? Bool == true { return }
