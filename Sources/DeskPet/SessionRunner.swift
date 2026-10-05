@@ -67,7 +67,7 @@ final class SessionRunner: ObservableObject, Identifiable {
     private var turnHadText = false
     private var idleTimer: Timer?
     /// Tin gửi tới khi phiên đang bận — chạy lần lượt sau mỗi lượt (như gõ tiếp trong terminal).
-    private var queued: [(text: String, byVoice: Bool)] = []
+    private var queued: [(text: String, byVoice: Bool, attachments: [Attachment])] = []
     /// Lượt gần nhất do người dùng NÓI (giọng nói) hay gõ — chỉ đọc to câu trả lời khi nói.
     private(set) var lastTurnByVoice = false
     /// Lượt hiện tại là /clear → xong thì dọn khung chat.
@@ -142,12 +142,15 @@ final class SessionRunner: ObservableObject, Identifiable {
     // MARK: - Gửi / dừng
 
     /// Gửi nguyên văn như gõ trong Claude Code — tin thường hoặc lệnh slash (/clear, /compact, /model …).
-    func send(_ raw: String, byVoice: Bool = false) {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+    /// `attachments`: ảnh gửi thẳng cho Claude xem; tệp khác gửi đường dẫn.
+    func send(_ raw: String, byVoice: Bool = false, attachments: [Attachment] = []) {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !attachments.isEmpty else { return }
+        if text.isEmpty { text = attachments.contains { $0.isImage } ? "Xem ảnh đính kèm." : "Xem tệp đính kèm." }
         if turnActive {
-            queued.append((text, byVoice))
-            items.append(ChatItem(kind: .info, text: "⏳ Xếp hàng: \(text.prefix(80))"))
+            queued.append((text, byVoice, attachments))
+            items.append(ChatItem(kind: .info, text: "⏳ Xếp hàng: \(text.prefix(80))"
+                                  + (attachments.isEmpty ? "" : " (+\(attachments.count) tệp)")))
             return
         }
         if openedInTerminal {
@@ -172,7 +175,9 @@ final class SessionRunner: ObservableObject, Identifiable {
             guard launch() else { return }
         }
         idleTimer?.invalidate()
-        items.append(ChatItem(kind: .user, text: byVoice ? "🎤 " + text : text))
+        var userItem = ChatItem(kind: .user, text: byVoice ? "🎤 " + text : text)
+        userItem.attachments = attachments.map(\.url)
+        items.append(userItem)
         lastTurnByVoice = byVoice
         turnStartIndex = items.count
         resetTurnState()
@@ -180,7 +185,23 @@ final class SessionRunner: ObservableObject, Identifiable {
         setStatus(.working, "Đang suy nghĩ…")
         lastActivity = Date()
         onEvent?(self, .started)
-        writeJSON(["type": "user", "message": ["role": "user", "content": text]])
+        writeJSON(["type": "user", "message": ["role": "user", "content": Self.content(text, attachments)]])
+    }
+
+    /// Chỉ có chữ → chuỗi; có đính kèm → mảng khối: ảnh (base64) + chữ, tệp khác liệt kê đường dẫn để Claude tự đọc.
+    private static func content(_ text: String, _ attachments: [Attachment]) -> Any {
+        guard !attachments.isEmpty else { return text }
+        var blocks: [[String: Any]] = []
+        var files: [String] = []
+        for a in attachments {
+            if let b = a.contentBlock() { blocks.append(b) } else { files.append(a.url.path) }
+        }
+        var t = text
+        if !files.isEmpty {
+            t += "\n\nTệp đính kèm (đọc bằng tool Read nếu cần):\n" + files.map { "- \($0)" }.joined(separator: "\n")
+        }
+        blocks.append(["type": "text", "text": t])
+        return blocks
     }
 
     /// Dừng lượt đang chạy (giống Esc trong terminal) — tiến trình vẫn sống.
@@ -577,7 +598,7 @@ final class SessionRunner: ObservableObject, Identifiable {
         onEvent?(self, .finished(success: success))
         if !queued.isEmpty {
             let next = queued.removeFirst()
-            DispatchQueue.main.async { [weak self] in self?.send(next.text, byVoice: next.byVoice) }
+            DispatchQueue.main.async { [weak self] in self?.send(next.text, byVoice: next.byVoice, attachments: next.attachments) }
             return
         }
         idleTimer?.invalidate()

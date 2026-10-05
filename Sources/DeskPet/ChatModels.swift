@@ -17,6 +17,8 @@ struct ChatItem: Identifiable {
     var questions: [AskQuestion] = []
     /// Câu trả lời đã chọn (hiển thị sau khi gửi).
     var answerSummary: String = ""
+    /// Tệp người dùng đính kèm (hiện dưới bong bóng tin nhắn).
+    var attachments: [URL] = []
 }
 
 struct AskQuestion: Identifiable {

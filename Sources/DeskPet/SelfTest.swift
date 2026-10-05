@@ -8,6 +8,7 @@ import Speech
 ///   DeskPet --assistant "<tin nhắn>"                              hỏi trợ lý (có MCP DeskPet)
 ///   DeskPet --sessions <thư mục>                                  in các phiên cũ của thư mục
 enum SelfTest {
+    private static var firstAttachments: [Attachment] = []
     static func runIfRequested() {
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--sessions"), i + 1 < args.count { sessions(args[i + 1]) }
@@ -47,8 +48,12 @@ enum SelfTest {
         // `--mode <chế độ>`: giá trị đi sau --mode không phải tin nhắn.
         let modeIndex = args.firstIndex(of: "--mode")
         let mode = modeIndex.flatMap { $0 + 1 < args.count ? PermissionMode(rawValue: args[$0 + 1]) : nil }
-        let messages = args.indices.filter { $0 > i && !args[$0].hasPrefix("--") && $0 != modeIndex.map { $0 + 1 } }
+        // `--attach <tệp>` (lặp được): đính kèm vào tin đầu tiên.
+        let attachIdx = args.indices.filter { args[$0] == "--attach" && $0 + 1 < args.count }.map { $0 + 1 }
+        let messages = args.indices.filter { $0 > i && !args[$0].hasPrefix("--") && $0 != modeIndex.map { $0 + 1 }
+                                             && !attachIdx.contains($0) }
             .map { args[$0] }
+        firstAttachments = attachIdx.map { Attachment.make(URL(fileURLWithPath: args[$0])) }
         let runner = SessionRunner(title: "selftest", folder: AppSettings.shared.workingDirectory, sessionId: nil,
                                    permissionMode: mode ?? .default)
         runner.model = { AppSettings.shared.model }
@@ -93,7 +98,7 @@ enum SelfTest {
             default: break
             }
         }
-        runner.send(queue.removeFirst())
+        runner.send(queue.removeFirst(), attachments: firstAttachments)
         RunLoop.main.run()
     }
 

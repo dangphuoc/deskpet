@@ -157,6 +157,11 @@ Mỗi hồ sơ = một thư mục cấu hình Claude Code (`CLAUDE_CONFIG_DIR`) 
 "Mặc định" = `~/.claude`. Cài đặt → Tài khoản Claude: thêm hồ sơ → "Đăng nhập…" (mở Terminal, gõ `/login`).
 Chọn hồ sơ khi tạo phiên mới, hoặc nói với trợ lý "mở phiên ở X bằng tài khoản cá nhân".
 
+### Đính kèm ảnh / tệp
+Kéo thả ảnh hoặc tệp vào khung chat (phiên hoặc trợ lý), bấm 📎 để chọn, hoặc **⌘⇧V** để dán ảnh trong clipboard
+(⌘V vẫn dán chữ). Ảnh gửi thẳng cho Claude xem (ảnh lớn tự thu nhỏ, cạnh dài ≤ 1600px); tệp khác gửi đường dẫn để
+Claude tự đọc bằng tool Read. Ảnh dán / kéo từ trình duyệt được lưu tạm ở `~/Library/Application Support/DeskPet/attachments/`.
+
 ### Chế độ quyền (như Shift+Tab)
 Mỗi phiên trong DeskPet có thanh chế độ dưới ô nhập: **Hỏi trước** (default) · **Tự sửa file** (acceptEdits) ·
 **Lập kế hoạch** (plan) · **Auto**. Bấm để chọn hoặc **Shift+Tab** để xoay vòng; đổi ngay cả khi phiên đang chạy
@@ -216,6 +221,7 @@ DESKPET_SUPPORT_DIR=/tmp/x …                                 # chạy test v�
 .build/direct/DeskPet --tts-check "<câu>"                    # thử đọc to (không phát loa)
 /Applications/DeskPet.app/Contents/MacOS/DeskPet --stt-file <audio>   # thử nhận dạng tiếng Việt từ file
 .build/direct/DeskPet --selftest "<tin>" --mode acceptEdits   # chạy phiên test ở một chế độ quyền
+.build/direct/DeskPet --selftest "<tin>" --attach <tệp> …      # gửi kèm ảnh / tệp
 .build/direct/DeskPet --send-guard <pid>                     # claude <pid> còn chiếm terminal không (trước khi gõ vào phiên ngoài)
 .build/direct/DeskPet --menu-check <file>                    # nội dung màn hình có bảng xin quyền / bảng chọn không
 .build/direct/DeskPet --snapshot <thư mục>                   # render các trạng thái ra PNG

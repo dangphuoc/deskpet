@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Các hành động ngoài khung chat (cửa sổ, terminal…) do AppDelegate cung cấp.
 struct ChatActions {
@@ -18,6 +19,8 @@ struct ChatView: View {
 
     @ObservedObject private var voice = VoiceController.shared
     @State private var draft = ""
+    @State private var attachments: [Attachment] = []
+    @State private var dropTargeted = false
     @State private var showHistory = false
     @State private var showTodos = true
     @FocusState private var inputFocused: Bool
@@ -30,6 +33,21 @@ struct ChatView: View {
             messages
             Divider()
             inputBar
+        }
+        // Kéo thả ảnh / tệp vào bất kỳ đâu trong khung chat để đính kèm.
+        .onDrop(of: [.fileURL, .image], isTargeted: $dropTargeted) { providers in
+            handleDrop(providers)
+            return true
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .background(Color.accentColor.opacity(0.08))
+                    .overlay(Label("Thả vào để đính kèm", systemImage: "paperclip").font(.system(size: 14, weight: .medium)))
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
         }
         .onAppear {
             inputFocused = true
@@ -174,12 +192,19 @@ struct ChatView: View {
         case .user:
             HStack {
                 Spacer(minLength: 40)
-                Text(item.text)
-                    .font(.system(size: 13))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .foregroundStyle(.white)
+                VStack(alignment: .trailing, spacing: 4) {
+                    if !item.attachments.isEmpty {
+                        HStack(spacing: 4) {
+                            ForEach(item.attachments, id: \.self) { url in SentAttachmentView(url: url) }
+                        }
+                    }
+                    Text(item.text)
+                        .font(.system(size: 13))
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                }
             }
         case .assistant:
             HStack {
@@ -254,6 +279,7 @@ struct ChatView: View {
     private var inputBar: some View {
         VStack(spacing: 0) {
             voiceBar
+            attachmentStrip
             inputRow
             modeBar
         }
@@ -328,7 +354,7 @@ struct ChatView: View {
             } else {
                 Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)) }
                     .buttonStyle(.borderless)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
             }
         }
         .padding(10)
@@ -336,9 +362,81 @@ struct ChatView: View {
 
     private func send() {
         let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !runner.isBusy else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty, !runner.isBusy else { return }
+        let files = attachments
         draft = ""
-        runner.send(text)
+        attachments = []
+        runner.send(text, attachments: files)
+    }
+
+    // MARK: Đính kèm
+
+    /// Ô ảnh / tệp sắp gửi + nút 📎 chọn tệp + ⌘⇧V dán ảnh từ clipboard.
+    private var attachmentStrip: some View {
+        HStack(spacing: 6) {
+            ForEach(attachments) { a in
+                ZStack(alignment: .topTrailing) {
+                    Group {
+                        if let t = a.thumbnail {
+                            Image(nsImage: t).resizable().aspectRatio(contentMode: a.isImage ? .fill : .fit)
+                        } else {
+                            Image(systemName: "doc")
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.primary.opacity(0.15)))
+                    .help(a.url.path)
+                    Button { attachments.removeAll { $0.id == a.id } } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 13))
+                            .foregroundStyle(.white, .black.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 5, y: -5)
+                }
+            }
+            Button { pickFiles() } label: { Image(systemName: "paperclip") }
+                .buttonStyle(.borderless)
+                .help("Đính kèm ảnh / tệp (hoặc kéo thả vào khung chat, ⌘⇧V để dán ảnh)")
+            // ⌘⇧V: dán ảnh đang có trong clipboard (⌘V vẫn dán chữ như thường).
+            Button("") { attachments += Attachment.fromPasteboard() }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .opacity(0).frame(width: 0, height: 0)
+            if !attachments.isEmpty {
+                Text("\(attachments.count) tệp").font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, attachments.isEmpty ? 6 : 10)
+    }
+
+    private func pickFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.directoryURL = URL(fileURLWithPath: runner.folder)
+        panel.prompt = "Đính kèm"
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK { attachments += panel.urls.map(Attachment.make) }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) {
+        for p in providers {
+            if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = p.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    DispatchQueue.main.async { attachments.append(Attachment.make(url)) }
+                }
+            } else if p.canLoadObject(ofClass: NSImage.self) {
+                // Ảnh kéo từ trình duyệt / app khác (không có tệp) → lưu PNG tạm.
+                _ = p.loadObject(ofClass: NSImage.self) { obj, _ in
+                    guard let img = obj as? NSImage, let url = Attachment.saveTemp(img) else { return }
+                    DispatchQueue.main.async { attachments.append(Attachment.make(url)) }
+                }
+            }
+        }
     }
 
     private func markdown(_ s: String) -> AttributedString {
@@ -621,5 +719,26 @@ extension PermissionMode {
         case .auto: return .orange
         case .bypassPermissions, .dontAsk: return .red
         }
+    }
+}
+
+/// Ảnh nhỏ / tên tệp đã gửi, hiện trên bong bóng tin nhắn của bạn. Bấm để mở.
+struct SentAttachmentView: View {
+    let url: URL
+    var body: some View {
+        Button { NSWorkspace.shared.open(url) } label: {
+            if let img = NSImage(contentsOf: url), UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true {
+                Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                Label(url.lastPathComponent, systemImage: "doc")
+                    .font(.system(size: 11)).lineLimit(1)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color.primary.opacity(0.07), in: Capsule())
+            }
+        }
+        .buttonStyle(.plain)
+        .help(url.path)
     }
 }
