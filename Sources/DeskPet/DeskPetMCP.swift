@@ -66,7 +66,9 @@ enum DeskPetMCP {
     private static let str: [String: Any] = ["type": "string"]
 
     /// Tool cơ bản (vô hại) — phiên trợ lý được chạy không cần hỏi. Tool điều khiển máy theo Cài đặt.
-    static var baseToolNames: [String] { tools.compactMap { $0["name"] as? String } }
+    static var baseToolNames: [String] { tools.compactMap { $0["name"] as? String }.filter { !askFirstTools.contains($0) } }
+    /// Tool nới quyền — không cho tự chạy, luôn hiện Cho phép / Từ chối (phòng nội dung độc hại xúi trợ lý).
+    static let askFirstTools: Set<String> = ["set_permission_mode"]
 
     private static let tools: [[String: Any]] = [
         ["name": "open_url", "description": "Mở một trang web (http/https/mailto) trong trình duyệt mặc định.",
@@ -100,6 +102,8 @@ enum DeskPetMCP {
          "inputSchema": schema(["session": str])],
         ["name": "remote_control", "description": "Bật Remote Control cho một phiên: mở phiên đó trong Terminal (claude --resume … --remote-control <tên phiên>) để người dùng điều khiển tiếp từ app Claude trên điện thoại / claude.ai. Bỏ trống `session` = phiên hiện tại.",
          "inputSchema": schema(["session": str])],
+        ["name": "set_permission_mode", "description": "Đổi chế độ quyền của một phiên trong DeskPet (như Shift+Tab): default = hỏi trước, acceptEdits = tự sửa file, plan = chỉ lập kế hoạch, auto = Claude tự quyết có bộ lọc an toàn. Bỏ trống `session` = phiên hiện tại. Người dùng sẽ được hỏi xác nhận.",
+         "inputSchema": schema(["session": str, "mode": ["type": "string", "enum": ["default", "acceptEdits", "plan", "auto"]]], required: ["mode"])],
         ["name": "rename_session", "description": "Đặt tên hiển thị cho phiên. Bỏ trống `session` = phiên hiện tại.",
          "inputSchema": schema(["session": str, "name": str], required: ["name"])],
     ]
@@ -251,6 +255,16 @@ enum DeskPetMCP {
             }
             post(["action": "remote_control", "id": id])
             return ("Đã mở phiên \(d["title"] ?? id) trong Terminal với Remote Control. Người dùng điều khiển tiếp từ app Claude trên điện thoại hoặc claude.ai; trong lúc đó DeskPet không gõ vào phiên này.", false)
+
+        case "set_permission_mode":
+            guard let mode = PermissionMode(rawValue: s("mode")), PermissionMode.selectable.contains(mode) else {
+                return ("`mode` phải là default, acceptEdits, plan hoặc auto.", true)
+            }
+            guard let d = findSession(s("session")), let id = d["id"] as? String else {
+                return ("Không tìm thấy phiên \"\(s("session"))\" trong DeskPet (chỉ đổi được chế độ phiên chạy trong DeskPet; phiên ngoài thì người dùng bấm Shift+Tab trong terminal).", true)
+            }
+            post(["action": "set_permission_mode", "id": id, "mode": mode.rawValue])
+            return ("Đã chuyển phiên \(d["title"] ?? id) sang chế độ \(mode.label).", false)
 
         case "rename_session":
             guard !s("name").isEmpty else { return ("Thiếu tên mới.", true) }

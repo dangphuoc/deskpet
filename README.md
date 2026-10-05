@@ -157,6 +157,13 @@ Mỗi hồ sơ = một thư mục cấu hình Claude Code (`CLAUDE_CONFIG_DIR`) 
 "Mặc định" = `~/.claude`. Cài đặt → Tài khoản Claude: thêm hồ sơ → "Đăng nhập…" (mở Terminal, gõ `/login`).
 Chọn hồ sơ khi tạo phiên mới, hoặc nói với trợ lý "mở phiên ở X bằng tài khoản cá nhân".
 
+### Chế độ quyền (như Shift+Tab)
+Mỗi phiên trong DeskPet có thanh chế độ dưới ô nhập: **Hỏi trước** (default) · **Tự sửa file** (acceptEdits) ·
+**Lập kế hoạch** (plan) · **Auto**. Bấm để chọn hoặc **Shift+Tab** để xoay vòng; đổi ngay cả khi phiên đang chạy
+(`control_request set_permission_mode`). Cột trái hiện biểu tượng khi khác "Hỏi trước".
+Nói với trợ lý "chuyển phiên đó sang auto" cũng được — trợ lý luôn phải xin bạn Cho phép trước khi nới quyền.
+Phiên đang mở trong Terminal thì đổi bằng Shift+Tab ở Terminal.
+
 ### Remote Control
 Nút 📡 trên phiên (hoặc nói "bật remote control"): mở phiên trong Terminal bằng
 `claude --resume <id> --remote-control "<tên phiên>"` để điều khiển từ điện thoại / claude.ai.
@@ -208,6 +215,7 @@ DESKPET_SUPPORT_DIR=/tmp/x …                                 # chạy test v�
 /Applications/DeskPet.app/Contents/MacOS/DeskPet --login-item on|off|status
 .build/direct/DeskPet --tts-check "<câu>"                    # thử đọc to (không phát loa)
 /Applications/DeskPet.app/Contents/MacOS/DeskPet --stt-file <audio>   # thử nhận dạng tiếng Việt từ file
+.build/direct/DeskPet --selftest "<tin>" --mode acceptEdits   # chạy phiên test ở một chế độ quyền
 .build/direct/DeskPet --send-guard <pid>                     # claude <pid> còn chiếm terminal không (trước khi gõ vào phiên ngoài)
 .build/direct/DeskPet --menu-check <file>                    # nội dung màn hình có bảng xin quyền / bảng chọn không
 .build/direct/DeskPet --snapshot <thư mục>                   # render các trạng thái ra PNG

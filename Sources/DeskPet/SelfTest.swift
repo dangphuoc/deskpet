@@ -44,8 +44,13 @@ enum SelfTest {
             run(runner: SessionManager.shared.assistant, messages: Array(messages), allow: args.contains("--allow"))
         }
         guard let i = args.firstIndex(of: "--selftest") else { return }
-        let messages = args[(i + 1)...].filter { !$0.hasPrefix("--") }
-        let runner = SessionRunner(title: "selftest", folder: AppSettings.shared.workingDirectory, sessionId: nil)
+        // `--mode <chế độ>`: giá trị đi sau --mode không phải tin nhắn.
+        let modeIndex = args.firstIndex(of: "--mode")
+        let mode = modeIndex.flatMap { $0 + 1 < args.count ? PermissionMode(rawValue: args[$0 + 1]) : nil }
+        let messages = args.indices.filter { $0 > i && !args[$0].hasPrefix("--") && $0 != modeIndex.map { $0 + 1 } }
+            .map { args[$0] }
+        let runner = SessionRunner(title: "selftest", folder: AppSettings.shared.workingDirectory, sessionId: nil,
+                                   permissionMode: mode ?? .default)
         runner.model = { AppSettings.shared.model }
         run(runner: runner, messages: Array(messages), allow: !args.contains("--deny"))
     }
@@ -100,7 +105,7 @@ enum SelfTest {
             return
         }
         for r in m.runners {
-            print("=== phiên \"\(r.title)\" (\((r.folder as NSString).lastPathComponent)) sid=\(r.sessionId?.prefix(8) ?? "-") status=\(r.status.label)")
+            print("=== phiên \"\(r.title)\" (\((r.folder as NSString).lastPathComponent)) sid=\(r.sessionId?.prefix(8) ?? "-") status=\(r.status.label) mode=\(r.permissionMode.rawValue)")
             for item in r.items { print("   [\(item.kind)] \(item.text.prefix(160).replacingOccurrences(of: "\n", with: " "))") }
         }
         m.shutdownAll()
@@ -197,6 +202,8 @@ enum Snapshot {
             TodoItem(content: "Chạy test ekyc", activeForm: "", state: .pending),
         ])
         let b = manager.create(folder: NSHomeDirectory(), title: "napas error mapping")
+        a.setPermissionMode(.auto)
+        b.setPermissionMode(.acceptEdits)
         b.loadPreview([ChatItem(kind: .user, text: "map errorDesc cho mọi lỗi")], status: .working)
         let c = manager.create(folder: NSHomeDirectory(), title: "rate limit report")
         c.loadPreview([ChatItem(kind: .assistant, text: "Đã xong báo cáo.")], status: .done)

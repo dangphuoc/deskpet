@@ -88,6 +88,7 @@ final class SessionManager: ObservableObject {
         var sessionId: String?
         var lastActivity: Date
         var profileId: UUID?
+        var permissionMode: String?
     }
     private struct Store: Codable {
         var assistantSessionId: String?
@@ -113,7 +114,8 @@ final class SessionManager: ObservableObject {
 
         for r in store?.sessions ?? [] {
             let runner = SessionRunner(id: r.id, title: r.title, folder: r.folder, sessionId: r.sessionId,
-                                       lastActivity: r.lastActivity, profileId: r.profileId ?? AccountProfile.systemId)
+                                       lastActivity: r.lastActivity, profileId: r.profileId ?? AccountProfile.systemId,
+                                       permissionMode: r.permissionMode.flatMap(PermissionMode.init) ?? .default)
             wire(runner)
             runners.append(runner)
         }
@@ -342,7 +344,8 @@ final class SessionManager: ObservableObject {
                           assistantProfileId: assistant.profileId,
                           sessions: runners.map { Record(id: $0.id, title: $0.title, folder: $0.folder,
                                                          sessionId: $0.sessionId, lastActivity: $0.lastActivity,
-                                                         profileId: $0.profileId) })
+                                                         profileId: $0.profileId,
+                                                         permissionMode: $0.permissionMode.rawValue) })
         if let data = try? JSONEncoder().encode(store) { try? data.write(to: Self.storeURL, options: .atomic) }
     }
 
@@ -392,6 +395,7 @@ final class SessionManager: ObservableObject {
             if let sid = r.sessionId { d["claude_session_id"] = sid }
             if let p = r.pendingRequest { d["waiting_for"] = p.text }
             if r.openedInTerminal { d["opened_in_terminal"] = r.remoteControlOn ? "remote control" : true }
+            d["permission_mode"] = r.permissionMode.rawValue
             if !r.todos.isEmpty {
                 d["todos"] = r.todos.map { "[\($0.state.rawValue)] \($0.content)" }
             }
@@ -451,6 +455,13 @@ final class SessionManager: ObservableObject {
             } else {
                 open()
             }
+        case "set_permission_mode":
+            guard let idStr = cmd["id"] as? String, let id = UUID(uuidString: idStr), let r = runner(id),
+                  let m = (cmd["mode"] as? String).flatMap(PermissionMode.init) else { return }
+            r.setPermissionMode(m)
+            currentTargetId = r.id
+            persist()
+            writeState()
         case "rename_session":
             guard let idStr = cmd["id"] as? String, let id = UUID(uuidString: idStr), let r = runner(id),
                   let name = (cmd["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return }
@@ -536,6 +547,9 @@ final class SessionManager: ObservableObject {
         vừa nhắn, hoặc người dùng vừa bấm vào). Với các tool phiên, bỏ trống `session` là dùng phiên hiện tại.
         Ví dụ: "tạo phiên mới ở service-bank-v3" → find_projects "service-bank-v3" rồi start_session (không có prompt nếu không được nhờ việc gì);
         "clear đi" → clear_session; "đặt tên là X" → rename_session name=X; "bật remote control" → remote_control;
+        "chuyển phiên đó sang auto / tự sửa file / plan mode / hỏi trước" → set_permission_mode
+        (mode = auto / acceptEdits / plan / default; người dùng sẽ được hỏi xác nhận). Đừng bảo người dùng tự bấm Shift+Tab
+        với phiên trong DeskPet — chỉ phiên chạy ngoài DeskPet mới phải đổi trong terminal.
         "bảo phiên đó chạy test", "compact đi", "đổi model sang sonnet", "/code-review"… → send_to_session với đúng
         nội dung người dùng sẽ gõ trong Claude Code (vd. "chạy test module ekyc", "/compact", "/model sonnet", "/code-review").
         Lệnh slash dùng được trong phiên: /clear /compact /model /cost /context /rename và các skill của người dùng.

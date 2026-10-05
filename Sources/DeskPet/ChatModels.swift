@@ -160,6 +160,9 @@ enum ToolDescriber {
                 case "focus_session": return ("Mở phiên cho bạn xem", str("session"), "eye")
                 case "clear_session": return ("Clear phiên", str("session"), "eraser")
                 case "rename_session": return ("Đặt tên phiên", str("name"), "character.cursor.ibeam")
+                case "set_permission_mode":
+                    let m = PermissionMode(rawValue: str("mode"))
+                    return ("Đổi chế độ phiên", m.map { "\($0.label) · \(str("session"))" } ?? str("mode"), "slider.horizontal.3")
                 case "remote_control": return ("Bật Remote Control", str("session"), "dot.radiowaves.left.and.right")
                 case "screenshot": return ("Chụp màn hình", "", "camera.viewfinder")
                 case "list_windows": return ("Xem cửa sổ đang mở", "", "macwindow.on.rectangle")
@@ -209,5 +212,56 @@ enum ToolDescriber {
                   let s = String(data: data, encoding: .utf8) else { return "" }
             return clip(s)
         }
+    }
+}
+
+/// Chế độ quyền của Claude Code (như Shift+Tab trong terminal).
+enum PermissionMode: String, CaseIterable, Identifiable {
+    case `default`, acceptEdits, plan, auto
+    /// Chỉ để hiển thị nếu gặp (DeskPet không cho chọn — bỏ qua mọi lớp xin quyền).
+    case bypassPermissions, dontAsk
+
+    var id: String { rawValue }
+
+    /// Các chế độ chọn được trong DeskPet, theo thứ tự xoay vòng của Shift+Tab.
+    static let selectable: [PermissionMode] = [.default, .acceptEdits, .plan, .auto]
+
+    var label: String {
+        switch self {
+        case .default: return "Hỏi trước"
+        case .acceptEdits: return "Tự sửa file"
+        case .plan: return "Lập kế hoạch"
+        case .auto: return "Auto"
+        case .bypassPermissions: return "Bỏ qua mọi quyền"
+        case .dontAsk: return "Không hỏi (tự từ chối)"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .default: return "Sửa file, chạy lệnh đều hỏi Cho phép / Từ chối."
+        case .acceptEdits: return "Tự sửa / tạo file trong thư mục; chạy lệnh vẫn hỏi."
+        case .plan: return "Chỉ đọc và lên kế hoạch, không sửa gì cho tới khi bạn duyệt."
+        case .auto: return "Claude tự quyết, có bộ lọc an toàn chặn việc rủi ro; việc nghi ngờ vẫn hỏi."
+        case .bypassPermissions: return "Không hỏi gì cả."
+        case .dontAsk: return "Việc nào cần hỏi thì tự từ chối."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .default: return "hand.raised"
+        case .acceptEdits: return "pencil.and.outline"
+        case .plan: return "list.bullet.clipboard"
+        case .auto: return "bolt.badge.automatic"
+        case .bypassPermissions: return "exclamationmark.shield"
+        case .dontAsk: return "nosign"
+        }
+    }
+
+    var next: PermissionMode {
+        let list = Self.selectable
+        guard let i = list.firstIndex(of: self) else { return .default }
+        return list[(i + 1) % list.count]
     }
 }

@@ -38,6 +38,8 @@ final class SessionRunner: ObservableObject, Identifiable {
     @Published private(set) var sessionId: String?
     /// Hồ sơ tài khoản Claude Code mà phiên chạy bằng.
     @Published private(set) var profileId: UUID
+    /// Chế độ quyền (như Shift+Tab trong terminal). Đổi được khi đang chạy qua `control_request set_permission_mode`.
+    @Published private(set) var permissionMode: PermissionMode
     @Published private(set) var items: [ChatItem] = []
     @Published private(set) var status: Status = .idle
     @Published private(set) var statusText = "Sẵn sàng"
@@ -86,9 +88,11 @@ final class SessionRunner: ObservableObject, Identifiable {
                                                    "TaskGet", "AskUserQuestion"]
 
     init(id: UUID = UUID(), title: String, folder: String, sessionId: String?, isAssistant: Bool = false,
-         lastActivity: Date = Date(), profileId: UUID = AppSettings.shared.defaultProfileId) {
+         lastActivity: Date = Date(), profileId: UUID = AppSettings.shared.defaultProfileId,
+         permissionMode: PermissionMode = .default) {
         self.id = id
         self.profileId = profileId
+        self.permissionMode = PermissionMode.selectable.contains(permissionMode) ? permissionMode : .default
         self.title = title
         self.folder = folder
         self.sessionId = sessionId
@@ -245,6 +249,18 @@ final class SessionRunner: ObservableObject, Identifiable {
         onEvent?(self, .changed)
     }
 
+    /// Đổi chế độ quyền. Tiến trình đang chạy thì đổi ngay (có hiệu lực cả giữa lượt), chưa chạy thì dùng khi khởi chạy.
+    func setPermissionMode(_ m: PermissionMode) {
+        guard PermissionMode.selectable.contains(m), m != permissionMode else { return }
+        permissionMode = m
+        if process?.isRunning == true {
+            writeJSON(["type": "control_request", "request_id": UUID().uuidString,
+                       "request": ["subtype": "set_permission_mode", "mode": m.rawValue]])
+        }
+        items.append(ChatItem(kind: .info, text: "Chế độ: \(m.label) — \(m.detail)"))
+        onEvent?(self, .changed)
+    }
+
     /// Người dùng đã xem phiên — bỏ trạng thái "Xong" chưa đọc.
     func markSeen() {
         unread = false
@@ -270,7 +286,7 @@ final class SessionRunner: ObservableObject, Identifiable {
                     "--verbose",
                     "--include-partial-messages",
                     "--permission-prompt-tool", "stdio",
-                    "--permission-mode", "default"]
+                    "--permission-mode", permissionMode.rawValue]
         if let sid = sessionId { args += ["--resume", sid] }
         let m = model().trimmingCharacters(in: .whitespaces)
         if !m.isEmpty { args += ["--model", m] }
@@ -365,6 +381,12 @@ final class SessionRunner: ObservableObject, Identifiable {
         case "system":
             if msg["subtype"] as? String == "init", let sid = msg["session_id"] as? String, sid != sessionId {
                 sessionId = sid
+                onEvent?(self, .changed)
+            }
+            // CLI báo chế độ hiện tại đầu mỗi lượt (vd. Claude tự thoát plan mode sau khi bạn duyệt kế hoạch).
+            if msg["subtype"] as? String == "init", let raw = msg["permissionMode"] as? String,
+               let m = PermissionMode(rawValue: raw), m != permissionMode {
+                permissionMode = m
                 onEvent?(self, .changed)
             }
 

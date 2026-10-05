@@ -199,6 +199,11 @@ struct SidebarRow: View {
                 HStack(spacing: 4) {
                     if runner.isAssistant { Image(systemName: "sparkles").font(.system(size: 10)) }
                     Text(runner.title).font(.system(size: 12, weight: runner.unread ? .semibold : .regular)).lineLimit(1)
+                    if runner.permissionMode != .default && !runner.openedInTerminal {
+                        Image(systemName: runner.permissionMode.icon).font(.system(size: 10))
+                            .foregroundStyle(runner.permissionMode.color)
+                            .help("Chế độ: \(runner.permissionMode.label)")
+                    }
                     if runner.remoteControlOn {
                         Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 10)).foregroundStyle(.purple)
                     } else if runner.openedInTerminal {

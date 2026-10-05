@@ -255,7 +255,43 @@ struct ChatView: View {
         VStack(spacing: 0) {
             voiceBar
             inputRow
+            modeBar
         }
+    }
+
+    /// Chế độ quyền như dòng dưới ô nhập của Claude Code; Shift+Tab để xoay vòng.
+    @ViewBuilder
+    private var modeBar: some View {
+        HStack(spacing: 6) {
+            if runner.openedInTerminal {
+                Image(systemName: "apple.terminal").font(.system(size: 10))
+                Text("Đang mở trong Terminal — đổi chế độ bằng Shift+Tab ở đó").font(.system(size: 10))
+            } else {
+                Menu {
+                    ForEach(PermissionMode.selectable) { m in
+                        Button { runner.setPermissionMode(m) } label: {
+                            Label("\(m.label) — \(m.detail)", systemImage: runner.permissionMode == m ? "checkmark" : m.icon)
+                        }
+                    }
+                } label: {
+                    Label(runner.permissionMode.label, systemImage: runner.permissionMode.icon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(runner.permissionMode.color)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(runner.permissionMode.detail)
+                Text("⇧⇥ đổi chế độ").font(.system(size: 10)).foregroundStyle(.tertiary)
+                // Shift+Tab như trong Claude Code.
+                Button("") { runner.setPermissionMode(runner.permissionMode.next) }
+                    .keyboardShortcut(.tab, modifiers: .shift)
+                    .opacity(0).frame(width: 0, height: 0)
+            }
+            Spacer()
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
     }
 
     private var inputRow: some View {
@@ -573,5 +609,17 @@ enum FolderPicker {
         panel.message = "Chọn thư mục làm việc cho Claude"
         NSApp.activate(ignoringOtherApps: true)
         return panel.runModal() == .OK ? panel.url?.path : nil
+    }
+}
+
+extension PermissionMode {
+    var color: Color {
+        switch self {
+        case .default: return .secondary
+        case .acceptEdits: return .purple
+        case .plan: return .teal
+        case .auto: return .orange
+        case .bypassPermissions, .dontAsk: return .red
+        }
     }
 }
