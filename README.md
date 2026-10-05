@@ -208,6 +208,8 @@ DESKPET_SUPPORT_DIR=/tmp/x …                                 # chạy test v�
 /Applications/DeskPet.app/Contents/MacOS/DeskPet --login-item on|off|status
 .build/direct/DeskPet --tts-check "<câu>"                    # thử đọc to (không phát loa)
 /Applications/DeskPet.app/Contents/MacOS/DeskPet --stt-file <audio>   # thử nhận dạng tiếng Việt từ file
+.build/direct/DeskPet --send-guard <pid>                     # claude <pid> còn chiếm terminal không (trước khi gõ vào phiên ngoài)
+.build/direct/DeskPet --menu-check <file>                    # nội dung màn hình có bảng xin quyền / bảng chọn không
 .build/direct/DeskPet --snapshot <thư mục>                   # render các trạng thái ra PNG
 .build/direct/DeskPet --sessions <thư mục>                   # in danh sách phiên cũ của thư mục
 python3 tools/slice_sheet.py <sheet.png> Resources/Characters # cắt lại sprite từ sheet 4×8

@@ -21,6 +21,17 @@ enum SelfTest {
         if let i = args.firstIndex(of: "--tts-check"), i + 1 < args.count { ttsCheck(args[i + 1]) }
         // `DeskPet --stt-file <audio>` — nhận dạng tiếng Việt từ file (cần quyền Speech Recognition).
         if let i = args.firstIndex(of: "--stt-file"), i + 1 < args.count { sttFile(args[i + 1]) }
+        // `DeskPet --send-guard <pid>` — kiểm tra "claude còn chiếm terminal không" (không gõ gì).
+        if let i = args.firstIndex(of: "--send-guard"), i + 1 < args.count, let pid = Int(args[i + 1]) {
+            print(ExternalSessions.foregroundProblem(pid: pid) ?? "OK — được gõ")
+            exit(0)
+        }
+        // `DeskPet --menu-check <file>` — nội dung màn hình trong file có bảng chọn của Claude Code không.
+        if let i = args.firstIndex(of: "--menu-check"), i + 1 < args.count {
+            let text = (try? String(contentsOfFile: args[i + 1], encoding: .utf8)) ?? ""
+            print(ExternalSessions.showsChoiceMenu(text) ? "CÓ bảng chọn — chặn" : "không có bảng chọn")
+            exit(0)
+        }
         // `DeskPet --login-item on|off|status`
         if let i = args.firstIndex(of: "--login-item") {
             let mode = i + 1 < args.count ? args[i + 1] : "status"

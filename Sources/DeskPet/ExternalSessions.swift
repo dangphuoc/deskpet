@@ -2,7 +2,7 @@ import Foundation
 
 /// Các phiên `claude` đang chạy NGOÀI DeskPet (Terminal, iTerm, VS Code…): dò tiến trình bằng ps/lsof,
 /// ghép với transcript mới nhất trong thư mục project để biết tiêu đề và tin nhắn cuối.
-/// Chỉ để xem — DeskPet không gõ được vào các phiên này.
+/// Gõ được vào phiên trong iTerm / Terminal (AppleScript), có kiểm tra an toàn trước khi gõ — xem `send`.
 enum ExternalSessions {
     struct Info: Identifiable {
         let pid: Int
@@ -143,8 +143,29 @@ enum ExternalSessions {
     }
 
     /// Gõ `text` rồi Enter vào tab terminal đang chạy phiên (iTerm / Terminal), như người dùng tự gõ.
+    ///
+    /// Enter là phím nguy hiểm: nếu tab đang hiện bảng xin quyền của Claude Code, Enter chọn luôn "Yes";
+    /// nếu claude đã thoát / bị Ctrl-Z, chữ gõ vào thành lệnh shell. Nên trước khi gõ phải chắc:
+    /// (1) claude còn chạy và đang chiếm terminal, (2) không có bảng xin quyền / bảng chọn đang mở.
     static func send(_ text: String, to s: Info) -> Result<String, DeskPetMCP.ToolError> {
         guard let tty = s.tty else { return .failure(.init(text: "Không xác định được tab terminal của phiên này.")) }
+        let app = s.app.lowercased()
+        guard ["iterm", "iterm2", "terminal"].contains(app) else {
+            return .failure(.init(text: "Phiên đang chạy trong \(s.app) — DeskPet chỉ gõ được vào iTerm và Terminal. Nhờ người dùng thoát phiên đó rồi start_session với resume_session_id = \(s.sessionId ?? "?") để điều khiển từ DeskPet."))
+        }
+        if let problem = foregroundProblem(pid: s.pid) {
+            return .failure(.init(text: "Không gõ vào phiên \(s.title): \(problem) Gõ lúc này có thể thành lệnh shell."))
+        }
+        let blocked = "Phiên \(s.title) đang chờ bạn cho phép hoặc chọn đáp án — DeskPet không gõ vào để tránh tự bấm Enter chọn \"Yes\". Mở tab trong \(s.app) để tự xem và trả lời (focus_session)."
+        if let h = StatusHooks.states().values.filter({ $0.pid == s.pid }).max(by: { $0.time < $1.time }), h.kind == .permission {
+            return .failure(.init(text: blocked))
+        }
+        switch screenText(app: app, tty: tty) {
+        case .success(let screen):
+            if showsChoiceMenu(screen) { return .failure(.init(text: blocked)) }
+        case .failure(let err):
+            return .failure(.init(text: "Không đọc được màn hình tab \(tty) để kiểm tra trước khi gõ: \(err.text)"))
+        }
         // TUI của Claude Code gửi khi gặp Enter — xuống dòng giữa chừng sẽ gửi sớm, nên gộp thành một dòng.
         let line = text.components(separatedBy: .newlines).filter { !$0.isEmpty }.joined(separator: " ")
         let script: String
@@ -191,12 +212,93 @@ enum ExternalSessions {
             end run
             """
         default:
-            return .failure(.init(text: "Phiên đang chạy trong \(s.app) — DeskPet chỉ gõ được vào iTerm và Terminal. Nhờ người dùng thoát phiên đó rồi start_session với resume_session_id = \(s.sessionId ?? "?") để điều khiển từ DeskPet."))
+            return .failure(.init(text: "Không hỗ trợ \(s.app)."))
         }
         let (status, out, err) = runScript(script, args: [tty, line])
         if status == 0 && out == "ok" { return .success("Đã gõ vào phiên \(s.title) trong \(s.app): \(line)") }
         if out == "notfound" { return .failure(.init(text: "Không tìm thấy tab \(tty) trong \(s.app).")) }
         return .failure(.init(text: "Không gõ được vào \(s.app): \(err.isEmpty ? out : err). Có thể cần cho DeskPet quyền điều khiển \(s.app) (System Settings → Privacy & Security → Automation)."))
+    }
+
+    // MARK: - Kiểm tra an toàn trước khi gõ
+
+    /// nil = claude còn chạy và đang chiếm terminal (chính nó hoặc lệnh con của nó ở foreground).
+    /// Ngược lại trả về lý do không được gõ.
+    static func foregroundProblem(pid: Int) -> String? {
+        // tpgid = nhóm tiến trình đang ở foreground của terminal.
+        var procs: [Int: (ppid: Int, pgid: Int, tpgid: Int, stat: String)] = [:]
+        for line in run("/bin/ps", ["-axo", "pid=,ppid=,pgid=,tpgid=,stat="]).split(separator: "\n") {
+            let c = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard c.count >= 5, let p = Int(c[0]), let pp = Int(c[1]), let g = Int(c[2]), let t = Int(c[3]) else { continue }
+            procs[p] = (pp, g, t, String(c[4]))
+        }
+        guard let me = procs[pid] else { return "phiên Claude (pid \(pid)) đã thoát." }
+        if me.stat.hasPrefix("T") { return "phiên Claude đang bị tạm dừng (Ctrl-Z)." }
+        guard me.tpgid > 0 else { return "phiên Claude không còn gắn với tab terminal." }
+        if me.pgid == me.tpgid { return nil }
+        // Foreground là nhóm khác: chỉ chấp nhận nếu là tiến trình con/cháu của claude (vd. lệnh Bash Claude đang chạy).
+        func descends(_ p: Int) -> Bool {
+            var cur = p, n = 0
+            while cur > 1, n < 40, let info = procs[cur] {
+                if cur == pid { return true }
+                cur = info.ppid; n += 1
+            }
+            return false
+        }
+        if procs.contains(where: { $0.value.pgid == me.tpgid && descends($0.key) }) { return nil }
+        return "terminal đang ở tiến trình khác (có thể Claude đã thoát về shell)."
+    }
+
+    /// Có bảng chọn của Claude Code đang mở không (xin quyền "Do you want to…", AskUserQuestion…).
+    /// Dấu hiệu ở phần cuối màn hình: dòng đang chọn "❯ 1." hoặc chân bảng "Esc to cancel".
+    static func showsChoiceMenu(_ screen: String) -> Bool {
+        let tail = screen.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .suffix(30)
+        return tail.contains { line in
+            // Bảng có thể vẽ trong khung: "│ ❯ 1. Yes".
+            line.range(of: #"^[│┃|╭╰\s]*[❯›]\s*\d+\.\s"#, options: .regularExpression) != nil
+                || line.localizedCaseInsensitiveContains("Esc to cancel")
+        }
+    }
+
+    /// Nội dung đang hiện trên tab (iTerm: `contents` của session; Terminal: `contents` của tab).
+    private static func screenText(app: String, tty: String) -> Result<String, DeskPetMCP.ToolError> {
+        let script: String
+        if app == "terminal" {
+            script = """
+            on run argv
+              tell application id "com.apple.Terminal"
+                repeat with w in windows
+                  repeat with t in tabs of w
+                    if tty of t is (item 1 of argv) then return "ok:" & (contents of t)
+                  end repeat
+                end repeat
+              end tell
+              return "notfound"
+            end run
+            """
+        } else {
+            script = """
+            on run argv
+              tell application id "com.googlecode.iterm2"
+                repeat with w in windows
+                  repeat with t in tabs of w
+                    repeat with s in sessions of t
+                      if tty of s is (item 1 of argv) then return "ok:" & (contents of s)
+                    end repeat
+                  end repeat
+                end repeat
+              end tell
+              return "notfound"
+            end run
+            """
+        }
+        let (status, out, err) = runScript(script, args: [tty])
+        if status == 0, out.hasPrefix("ok:") { return .success(String(out.dropFirst(3))) }
+        if out == "notfound" { return .failure(.init(text: "không thấy tab \(tty).")) }
+        return .failure(.init(text: (err.isEmpty ? out : err) + " (có thể cần cho DeskPet quyền điều khiển app terminal trong Privacy & Security → Automation)."))
     }
 
     private static func runScript(_ script: String, args: [String]) -> (Int32, String, String) {
